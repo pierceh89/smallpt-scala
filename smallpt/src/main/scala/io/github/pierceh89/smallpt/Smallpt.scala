@@ -3,7 +3,16 @@ package io.github.pierceh89.smallpt
 import java.io.{DataOutputStream, FileOutputStream}
 
 /**
-  * @author Diego on 2018. 6. 19..
+  * smallpt, a Path Tracer by Kevin Beason, 2008
+  * http://www.kevinbeason.com/smallpt/
+  * ported by Diego since 2018. 6. 19..
+  */
+
+/**
+  * Vector, also used as Color
+  * @param x or r
+  * @param y or g
+  * @param z or b
   */
 case class Vec(x: Double= 0.0, y: Double= 0.0, z: Double= 0.0) {
   def +(other: Vec): Vec = Vec(x + other.x, y + other.y, z + other.z)
@@ -16,11 +25,31 @@ case class Vec(x: Double= 0.0, y: Double= 0.0, z: Double= 0.0) {
   def cross(other: Vec): Vec =
     Vec(y*other.z - z*other.y, z*other.x - x*other.z, x*other.y - y*other.x)
 }
+
+/**
+  * Ray class
+  * @param o origin
+  * @param d direction
+  */
 case class Ray(o: Vec, d: Vec)
+
+/**
+  * material types, used in radiance()
+  */
 object ReflType extends Enumeration {
   val DIFF, SPEC, REFR = Value
 }
+
+/**
+  * Sphere class
+  * @param rad  radius
+  * @param p    position
+  * @param e    emission
+  * @param c    color
+  * @param refl reflection type
+  */
 case class Sphere(rad: Double, p: Vec, e: Vec, c: Vec, refl: ReflType.Value){
+  // return distance, 0 if no hit
   def intersect(r: Ray): Double = {
     val op = p-r.o
     val epsilon=1e-4
@@ -44,6 +73,7 @@ object Smallpt {
   private val rand = scala.util.Random
   import ReflType.{DIFF, REFR, SPEC}
   val spheres: Seq[Sphere] = Vector(
+    //Scene: radius, position, emission, color, material
     Sphere(1e5, Vec(1e5+1, 40.8, 81.6),Vec(),Vec(.75, .25, .25), DIFF), //Left
     Sphere(1e5, Vec(-1e5+99,40.8,81.6),Vec(),Vec(.25,.25,.75),DIFF),//Right
     Sphere(1e5, Vec(50,40.8, 1e5),     Vec(),Vec(.75,.75,.75),DIFF),//Back
@@ -83,7 +113,7 @@ object Smallpt {
 
     def comp_radiance(obj: Sphere, f: Vec): Vec = {
       obj.refl match {
-        case DIFF =>
+        case DIFF => // Ideal DIFFUSE reflection
           val r1 = 2 * Math.PI * rand.nextDouble()
           val r2 = rand.nextDouble()
           val r2s = Math.sqrt(r2)
@@ -92,9 +122,9 @@ object Smallpt {
           val v = w.cross(u)
           val d = (u*Math.cos(r1)*r2s + v*Math.sin(r1)*r2s + w*Math.sqrt(1-r2)).norm()
           obj.e + f * radiance(Ray(x,d), newDepth)
-        case SPEC =>
+        case SPEC => // Ideal SPECULAR reflection
           obj.e + f * radiance(Ray(x, r.d-n*2*n.dot(r.d)), newDepth)
-        case REFR =>
+        case REFR => // Ideal dielectric REFRACTION
           val reflRay = Ray(x, r.d-n*2*n.dot(r.d))
           val into = n.dot(nl) > 0
           val nc = 1.0
@@ -117,7 +147,7 @@ object Smallpt {
             val RP = Re/P
             val TP = Tr/(1-P)
             if (newDepth > 2) {
-              if (rand.nextDouble() < P) {
+              if (rand.nextDouble() < P) { // Russian roulette
                 obj.e + f * radiance(reflRay, newDepth) * RP
               } else {
                 obj.e + f * radiance(Ray(x, tdir), newDepth) * TP
@@ -144,40 +174,40 @@ object Smallpt {
   }
 
   def main(args: Array[String]): Unit = {
-    val w = 300
-    val h = 300
-    val samps: Int = if (args.length == 1) args(0).toInt/4 else 1
+    val width = 1024
+    val height = 768
+    val samples: Int = if (args.length == 1) args(0).toInt/4 else 1
+    // camera position, direction
     val cam = Ray(Vec(50, 52, 295.6), Vec(0, -0.042612, -1).norm())
-    val cx = Vec(w*.5135/h)
+    val cx = Vec(width*.5135/height)
     val cy = cx.cross(cam.d).norm()*.5135
-    val c = Array.fill[Vec](w*h)(Vec())
-    var r: Vec = Vec()
-    for (y <- 0 until h) {
-      for (x <- 0 until w) {
-        val xi = Seq(0, 0, y*y*y)
-        for (sy <- 0 until 2) {
-          val i = (h-y-1)*w+x
-          for (sx <- 0 until 2) {
-            for (s <- 0 until samps) {
-              r = Vec()
-              val r1 = 2 * rand.nextDouble()
-              val dx = if (r1 < 1) Math.sqrt(r1)-1 else 1-Math.sqrt(2-r1)
-              val r2 = 2 * rand.nextDouble()
-              val dy = if (r2 < 1) Math.sqrt(r2)-1 else 1-Math.sqrt(2-r2)
-              val d = cx * (((sx+.5 + dx)/2 + x)/w - .5) +
-                      cy * (((sy+.5 + dy)/2 + y)/h - .5) + cam.d
-              val rad = radiance(Ray(cam.o + d*140, d.norm()), 0) * (1.0/samps)
-              r = r + rad
-            }
-            c(i) = c(i) + Vec(clamp(r.x), clamp(r.y), clamp(r.z))*.25
-          }
-        }
-      }
+    val c = Array.fill[Vec](width*height)(Vec())
+    // 2 x 2 subpixel tuples
+    val sub = for { sy <- 0 until 2; sx <- 0 until 2} yield (sx, sy)
+    // image pixel tuples
+    val canvas = for { y <- 0 until height; x <- 0 until width } yield (x, y)
+    canvas.par.foreach{
+      case (x, y) =>
+        val i = (height-y-1)*width+x
+        c(i) = sub.par.foldLeft(Vec())((pixelSum, sub) => {
+          val radSampleSum = (0 until samples).par.foldLeft(Vec())((radSum, _) => {
+            val r1 = 2 * rand.nextDouble()
+            val dx = if (r1 < 1) Math.sqrt(r1)-1 else 1-Math.sqrt(2-r1)
+            val r2 = 2 * rand.nextDouble()
+            val dy = if (r2 < 1) Math.sqrt(r2)-1 else 1-Math.sqrt(2-r2)
+            val d = cx * (((sub._1+.5 + dx)/2 + x)/width - .5) +
+              cy * (((sub._2+.5 + dy)/2 + y)/height - .5) + cam.d
+            val rad = radiance(Ray(cam.o + d*140, d.norm()), 0) * (1.0/samples)
+            radSum + rad
+          })
+          pixelSum + Vec(clamp(radSampleSum.x), clamp(radSampleSum.y), clamp(radSampleSum.z))*.25
+        })
     }
+    // Write image to PPM file
     val out = new DataOutputStream(new FileOutputStream("image.ppm"))
-    out.writeBytes("P3\n%d %d\n%d\n".format(w, h, 255))
-    for (i <- 0 until w*h) {
-      out.writeBytes("%d %d %d ".format(toInt(c(i).x), toInt(c(i).y), toInt(c(i).z)))
+    out.writeBytes("P3\n%d %d\n%d\n".format(width, height, 255))
+    for (i <- 0 until width*height) {
+      out.writeBytes(s"${toInt(c(i).x)} ${toInt(c(i).y)} ${toInt(c(i).y)} ")
     }
   }
 }
