@@ -74,15 +74,15 @@ object Smallpt {
   import ReflType.{DIFF, REFR, SPEC}
   val spheres: Seq[Sphere] = Vector(
     //Scene: radius, position, emission, color, material
-    Sphere(1e5, Vec(1e5+1, 40.8, 81.6),Vec(),Vec(.75, .25, .25), DIFF), //Left
-    Sphere(1e5, Vec(-1e5+99,40.8,81.6),Vec(),Vec(.25,.25,.75),DIFF),//Right
-    Sphere(1e5, Vec(50,40.8, 1e5),     Vec(),Vec(.75,.75,.75),DIFF),//Back
-    Sphere(1e5, Vec(50,40.8,-1e5+170), Vec(),Vec(),           DIFF),//Front
-    Sphere(1e5, Vec(50, 1e5, 81.6),    Vec(),Vec(.75,.75,.75),DIFF),//Bottom
-    Sphere(1e5, Vec(50,-1e5+81.6,81.6),Vec(),Vec(.75,.75,.75),DIFF),//Top
-    Sphere(16.5,Vec(27,16.5,47),       Vec(),Vec(1,1,1)*.999, SPEC),//Mirror
-    Sphere(16.5,Vec(73,16.5,78),       Vec(),Vec(1,1,1)*.999, REFR),//Glass
-    Sphere(600, Vec(50,681.6-.27,81.6),Vec(12,12,12),  Vec(), DIFF) //Lite
+    Sphere(1e5, Vec(1e5+1, 40.8, 81.6), Vec(), Vec(.75, .25, .25), DIFF),//Left
+    Sphere(1e5, Vec(-1e5+99,40.8,81.6), Vec(), Vec(.25, .25, .75), DIFF),//Right
+    Sphere(1e5, Vec(50,40.8, 1e5),      Vec(), Vec(.75, .75, .75), DIFF),//Back
+    Sphere(1e5, Vec(50,40.8,-1e5+170),  Vec(), Vec()             , DIFF),//Front
+    Sphere(1e5, Vec(50, 1e5, 81.6),     Vec(), Vec(.75, .75, .75), DIFF),//Bottom
+    Sphere(1e5, Vec(50,-1e5+81.6,81.6), Vec(), Vec(.75, .75, .75), DIFF),//Top
+    Sphere(16.5,Vec(27,16.5,47),        Vec(), Vec(1, 1, 1)*.999 , SPEC),//Mirror
+    Sphere(16.5,Vec(73,16.5,78),        Vec(), Vec(1, 1, 1)*.999 , REFR),//Glass
+    Sphere(600, Vec(50,681.6-.27,81.6), Vec(12,12,12), Vec()    , DIFF) //Lite
   )
   def clamp(x: Double): Double = if(x < 0) 0 else if(x > 1) 1 else x
   def toInt(x: Double): Int = (Math.pow(clamp(x), 1/2.2)*255+0.5).toInt
@@ -153,7 +153,7 @@ object Smallpt {
                 obj.e + f * radiance(Ray(x, tdir), newDepth) * TP
               }
             } else {
-              obj.e + f * radiance(reflRay, newDepth) * Re + radiance(Ray(x, tdir), newDepth)* Tr
+              obj.e + f * radiance(reflRay, newDepth) * Re + radiance(Ray(x, tdir), newDepth) * Tr
             }
           }
       }
@@ -174,8 +174,8 @@ object Smallpt {
   }
 
   def main(args: Array[String]): Unit = {
-    val width = 1024
-    val height = 768
+    val width = 300
+    val height = 300
     val samples: Int = if (args.length == 1) args(0).toInt/4 else 1
     // camera position, direction
     val cam = Ray(Vec(50, 52, 295.6), Vec(0, -0.042612, -1).norm())
@@ -188,6 +188,7 @@ object Smallpt {
     val canvas = for { y <- 0 until height; x <- 0 until width } yield (x, y)
     canvas.par.foreach{
       case (x, y) =>
+        print(s"\rRendering ${4*samples}subpixels at ($x, $y)")
         val i = (height-y-1)*width+x
         c(i) = sub.par.foldLeft(Vec())((pixelSum, sub) => {
           val radSampleSum = (0 until samples).par.foldLeft(Vec())((radSum, _) => {
@@ -200,14 +201,14 @@ object Smallpt {
             val rad = radiance(Ray(cam.o + d*140, d.norm()), 0) * (1.0/samples)
             radSum + rad
           })
-          pixelSum + Vec(clamp(radSampleSum.x), clamp(radSampleSum.y), clamp(radSampleSum.z))*.25
+          pixelSum + Vec(clamp(radSampleSum.x), clamp(radSampleSum.y), clamp(radSampleSum.z)) * .25
         })
     }
     // Write image to PPM file
     val out = new DataOutputStream(new FileOutputStream("image.ppm"))
     out.writeBytes("P3\n%d %d\n%d\n".format(width, height, 255))
     for (i <- 0 until width*height) {
-      out.writeBytes(s"${toInt(c(i).x)} ${toInt(c(i).y)} ${toInt(c(i).y)} ")
+      out.writeBytes(s"${toInt(c(i).x)} ${toInt(c(i).y)} ${toInt(c(i).z)} ")
     }
   }
 }
