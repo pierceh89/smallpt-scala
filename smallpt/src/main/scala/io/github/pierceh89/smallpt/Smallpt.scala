@@ -51,21 +51,15 @@ object ReflType extends Enumeration {
 case class Sphere(rad: Double, p: Vec, e: Vec, c: Vec, refl: ReflType.Value){
   // return distance, 0 if no hit
   def intersect(r: Ray): Double = {
-    val op = p-r.o
     val epsilon=1e-4
+    val op = p-r.o
     val b = op.dot(r.d)
-    var det = b*b - op.dot(op) + rad*rad
-    if (det < 0) { 0.0 }
-    else {
-      det = Math.sqrt(det)
-      if (b-det > epsilon) {
-        b-det
-      }
-      else if (b + det > epsilon) {
-        b+det
-      } else {
-        0
-      }
+    val det = b*b - op.dot(op) + rad*rad
+    det match {
+      case it if it < 0 => 0
+      case it if b - Math.sqrt(it) > epsilon => b - Math.sqrt(it)
+      case it if b + Math.sqrt(it) > epsilon => b + Math.sqrt(it)
+      case _ => 0
     }
   }
 }
@@ -82,27 +76,39 @@ object Smallpt {
     Sphere(1e5, Vec(50,-1e5+81.6,81.6), Vec(), Vec(.75, .75, .75), DIFF),//Top
     Sphere(16.5,Vec(27,16.5,47),        Vec(), Vec(1, 1, 1)*.999 , SPEC),//Mirror
     Sphere(16.5,Vec(73,16.5,78),        Vec(), Vec(1, 1, 1)*.999 , REFR),//Glass
-    Sphere(600, Vec(50,681.6-.27,81.6), Vec(12,12,12), Vec()    , DIFF) //Lite
+    Sphere(600, Vec(50,681.6-.27,81.6), Vec(12,12,12), Vec()     , DIFF) //Lite
   )
   def clamp(x: Double): Double = if(x < 0) 0 else if(x > 1) 1 else x
   def toInt(x: Double): Int = (Math.pow(clamp(x), 1/2.2)*255+0.5).toInt
-  def intersect(r: Ray, t: Double, id: Int): (Boolean, Double, Int) = {
-    val n = spheres.size-1
-    val infinity = 1e20
-    var newT = 1e20
-    var newId = id
-    for(i <- n to 0 by -1) {
-      val distance = spheres(i).intersect(r)
-      if (distance > 0 && distance < newT) {
-        newT = distance
-        newId = i
+  def intersect(r: Ray): (Boolean, Double, Int) = {
+    spheres.zipWithIndex.foldLeft((false, 1e20, -1))((prevResult, next) => {
+      val distance = next._1.intersect(r)
+      val hit = distance < prevResult._2
+      if (distance > 0 && hit) {
+        (hit, distance, next._2)
+      } else {
+        prevResult
       }
+    })
+  }
+  def radiance2(r: Ray, depth: Int): Vec = {
+    def comp_radiance2(r: Ray, depth: Int, rad: Vec): Vec = {
+      val (isIntersect, t, id) = intersect(r)
+      val obj = spheres(id)
+      val x = r.o + r.d*t
+      val n = (x-obj.p).norm()
+      val nl = if(n.dot(r.d) < 0) n else n*(-1)
+      var f = obj.c
+      val p = if (f.x > f.y && f.x > f.z) f.x else if (f.y > f.z) f.y else f.z
+      if (!isIntersect) return rad
+      //TODO: implement tail recursion
+      rad
     }
-    (newT < infinity, newT, newId)
+    comp_radiance2(r, depth, Vec())
   }
   def radiance(r: Ray, depth: Int): Vec = {
-    val (isIntersect, t, id) = intersect(r, 0.0, 0)
-    if (!isIntersect) Vec()
+    val (isIntersect, t, id) = intersect(r)
+    if (!isIntersect) return Vec()
     val obj = spheres(id)
     val x = r.o + r.d*t
     val n = (x-obj.p).norm()
@@ -110,7 +116,6 @@ object Smallpt {
     var f = obj.c
     val p = if (f.x > f.y && f.x > f.z) f.x else if (f.y > f.z) f.y else f.z
     val newDepth = depth + 1
-
     def comp_radiance(obj: Sphere, f: Vec): Vec = {
       obj.refl match {
         case DIFF => // Ideal DIFFUSE reflection
@@ -174,8 +179,8 @@ object Smallpt {
   }
 
   def main(args: Array[String]): Unit = {
-    val width = 300
-    val height = 300
+    val width = 640
+    val height = 480
     val samples: Int = if (args.length == 1) args(0).toInt/4 else 1
     // camera position, direction
     val cam = Ray(Vec(50, 52, 295.6), Vec(0, -0.042612, -1).norm())
