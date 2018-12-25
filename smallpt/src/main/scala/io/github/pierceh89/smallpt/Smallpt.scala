@@ -22,8 +22,7 @@ case class Vec(x: Double= 0.0, y: Double= 0.0, z: Double= 0.0) {
   def length: Double = Math.sqrt(x*x + y*y + z*z)
   def norm(): Vec = this * (1 / length)
   def dot(other: Vec): Double = x*other.x + y*other.y + z*other.z
-  def cross(other: Vec): Vec =
-    Vec(y*other.z - z*other.y, z*other.x - x*other.z, x*other.y - y*other.x)
+  def cross(other: Vec): Vec = Vec(y*other.z - z*other.y, z*other.x - x*other.z, x*other.y - y*other.x)
 }
 
 /**
@@ -91,7 +90,8 @@ object Smallpt {
         hitId = i
       }
     }
-    if (hitId == -1) (0, None) else (dist, Option(spheres(hitId)))
+    if (hitId == -1) (0, None)
+    else (dist, Option(spheres(hitId)))
   }
   def radiance(r: Ray, depth: Int): Vec = {
     val (hitDist, optHitObj) = intersect(r)
@@ -106,51 +106,54 @@ object Smallpt {
     if (depth + 1 > 5 && rand.nextDouble() >= p) return hitObj.e
     if (depth + 1 > 5) f = f * (1.0 / p)
 
-    val rad = if (hitObj.refl == SPEC) {
-      hitObj.e + f * radiance(Ray(x, r.d-n*2*n.dot(r.d)), depth + 1)
-    } else if (hitObj.refl == DIFF) {
-      val r1 = 2 * Math.PI * rand.nextDouble()
-      val r2 = rand.nextDouble()
-      val r2s = Math.sqrt(r2)
-      val w = nl
-      val u = (if (Math.abs(w.x) > .1) Vec(0, 1) else Vec(1)).norm()
-      val v = w.cross(u)
-      val d = (u*Math.cos(r1)*r2s + v*Math.sin(r1)*r2s + w*Math.sqrt(1-r2)).norm()
-      hitObj.e + f * radiance(Ray(x,d), depth + 1)
-    } else {
-      val reflRay = Ray(x, r.d-n*2*n.dot(r.d))
-      val into = n.dot(nl) > 0
-      val nc = 1.0
-      val nt = 1.5
-      val nnt = if(into) nc/nt else nt/nc
-      val ddn = r.d.dot(nl)
-      val cos2t = 1 - nnt * nnt * (1-ddn*ddn)
-      if (cos2t < 0) {
-        hitObj.e + f * radiance(reflRay, depth + 1)
-      } else {
-        val dir = if(into) 1 else -1
-        val tdir = (r.d*nnt - n*(dir*(ddn*nnt+Math.sqrt(cos2t)))).norm()
-        val a = nt-nc
-        val b = nt+nc
-        val R0 = a*a/(b*b)
-        val c = if(into) 1+ddn else 1-tdir.dot(n)
-        val Re = R0 + (1-R0)*c*c*c*c*c
-        val Tr = 1-Re
-        val P = .25 + .5*Re
-        val RP = Re/P
-        val TP = Tr/(1-P)
-        if (depth + 1 > 2) {
-          if (rand.nextDouble() < P) { // Russian roulette
-            hitObj.e + f * radiance(reflRay, depth + 1) * RP
-          } else {
-            hitObj.e + f * radiance(Ray(x, tdir), depth + 1) * TP
+    hitObj.refl match {
+      case SPEC => hitObj.e + f * radiance(Ray(x, r.d - n * 2 * n.dot(r.d)), depth + 1)
+      case DIFF =>
+        val d: Vec = compDiffuseDist(nl)
+        hitObj.e + f * radiance(Ray(x, d), depth + 1)
+      case REFR => val reflRay = Ray(x, r.d - n * 2 * n.dot(r.d))
+        val (into: Boolean, nc: Double, nt: Double, nnt: Double, ddn: Double, cos2t: Double) = detInternalRefl(r, n, nl)
+        if (cos2t < 0) {hitObj.e + f * radiance(reflRay, depth + 1)} // total internal reflection
+        else {
+          val dir = if (into) 1 else -1
+          val tdir = (r.d * nnt - n * (dir * (ddn * nnt + Math.sqrt(cos2t)))).norm()
+          val a = nt - nc
+          val b = nt + nc
+          val R0 = a * a / (b * b)
+          val c = if (into) 1 + ddn else 1 - tdir.dot(n)
+          val Re = R0 + (1 - R0) * c * c * c * c * c
+          val Tr = 1 - Re
+          val P =.25 +.5 * Re
+          val RP = Re / P
+          val TP = Tr / (1 - P)
+          if (depth + 1 <= 2) {hitObj.e + f * radiance(reflRay, depth + 1) * Re + radiance(Ray(x, tdir), depth + 1) * Tr}
+          else {
+            if (rand.nextDouble() < P) {hitObj.e + f * radiance(reflRay, depth + 1) * RP}
+            else {hitObj.e + f * radiance(Ray(x, tdir), depth + 1) * TP}
           }
-        } else {
-          hitObj.e + f * radiance(reflRay, depth + 1) * Re + radiance(Ray(x, tdir), depth + 1) * Tr
         }
-      }
     }
-    rad
+  }
+
+  private def detInternalRefl(r: Ray, n: Vec, nl: Vec) = {
+    val into = n.dot(nl) > 0
+    val nc = 1.0
+    val nt = 1.5
+    val nnt = if (into) nc / nt else nt / nc
+    val ddn = r.d.dot(nl)
+    val cos2t = 1 - nnt * nnt * (1 - ddn * ddn)
+    (into, nc, nt, nnt, ddn, cos2t)
+  }
+
+  private def compDiffuseDist(nl: Vec) = {
+    val r1 = 2 * Math.PI * rand.nextDouble()
+    val r2 = rand.nextDouble()
+    val r2s = Math.sqrt(r2)
+    val w = nl
+    val u = (if (Math.abs(w.x) > .1) Vec(0, 1) else Vec(1)).norm()
+    val v = w.cross(u)
+    val d = (u * Math.cos(r1) * r2s + v * Math.sin(r1) * r2s + w * Math.sqrt(1 - r2)).norm()
+    d
   }
 
   def main(args: Array[String]): Unit = {
