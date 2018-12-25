@@ -103,64 +103,52 @@ object Smallpt {
     var f = hitObj.c
     val p = if (f.x > f.y && f.x > f.z) f.x else if (f.y > f.z) f.y else f.z
 
-    def comp_radiance(obj: Sphere, f: Vec): Vec = {
-      obj.refl match {
-        case DIFF => // Ideal DIFFUSE reflection
-          val r1 = 2 * Math.PI * rand.nextDouble()
-          val r2 = rand.nextDouble()
-          val r2s = Math.sqrt(r2)
-          val w = nl
-          val u = (if (Math.abs(w.x) > .1) Vec(0, 1) else Vec(1)).norm()
-          val v = w.cross(u)
-          val d = (u*Math.cos(r1)*r2s + v*Math.sin(r1)*r2s + w*Math.sqrt(1-r2)).norm()
-          obj.e + f * radiance(Ray(x,d), depth + 1)
-        case SPEC => // Ideal SPECULAR reflection
-          obj.e + f * radiance(Ray(x, r.d-n*2*n.dot(r.d)), depth + 1)
-        case REFR => // Ideal dielectric REFRACTION
-          val reflRay = Ray(x, r.d-n*2*n.dot(r.d))
-          val into = n.dot(nl) > 0
-          val nc = 1.0
-          val nt = 1.5
-          val nnt = if(into) nc/nt else nt/nc
-          val ddn = r.d.dot(nl)
-          val cos2t = 1 - nnt * nnt * (1-ddn*ddn)
-          if (cos2t < 0) {
-            obj.e + f * radiance(reflRay, depth + 1)
-          } else {
-            val dir = if(into) 1 else -1
-            val tdir = (r.d*nnt - n*(dir*(ddn*nnt+Math.sqrt(cos2t)))).norm()
-            val a = nt-nc
-            val b = nt+nc
-            val R0 = a*a/(b*b)
-            val c = if(into) 1+ddn else 1-tdir.dot(n)
-            val Re = R0 + (1-R0)*c*c*c*c*c
-            val Tr = 1-Re
-            val P = .25 + .5*Re
-            val RP = Re/P
-            val TP = Tr/(1-P)
-            if (depth + 1 > 2) {
-              if (rand.nextDouble() < P) { // Russian roulette
-                obj.e + f * radiance(reflRay, depth + 1) * RP
-              } else {
-                obj.e + f * radiance(Ray(x, tdir), depth + 1) * TP
-              }
-            } else {
-              obj.e + f * radiance(reflRay, depth + 1) * Re + radiance(Ray(x, tdir), depth + 1) * Tr
-            }
-          }
-      }
-    }
+    if (depth + 1 > 5 && rand.nextDouble() >= p) return hitObj.e
+    if (depth + 1 > 5) f = f * (1.0 / p)
 
-    val rad = if (depth + 1 > 5) {
-      if (rand.nextDouble() < p) {
-        f = f * (1.0 / p)
-        comp_radiance(hitObj, f)
-      }
-      else {
-        hitObj.e
-      }
+    val rad = if (hitObj.refl == SPEC) {
+      hitObj.e + f * radiance(Ray(x, r.d-n*2*n.dot(r.d)), depth + 1)
+    } else if (hitObj.refl == DIFF) {
+      val r1 = 2 * Math.PI * rand.nextDouble()
+      val r2 = rand.nextDouble()
+      val r2s = Math.sqrt(r2)
+      val w = nl
+      val u = (if (Math.abs(w.x) > .1) Vec(0, 1) else Vec(1)).norm()
+      val v = w.cross(u)
+      val d = (u*Math.cos(r1)*r2s + v*Math.sin(r1)*r2s + w*Math.sqrt(1-r2)).norm()
+      hitObj.e + f * radiance(Ray(x,d), depth + 1)
     } else {
-      comp_radiance(hitObj, f)
+      val reflRay = Ray(x, r.d-n*2*n.dot(r.d))
+      val into = n.dot(nl) > 0
+      val nc = 1.0
+      val nt = 1.5
+      val nnt = if(into) nc/nt else nt/nc
+      val ddn = r.d.dot(nl)
+      val cos2t = 1 - nnt * nnt * (1-ddn*ddn)
+      if (cos2t < 0) {
+        hitObj.e + f * radiance(reflRay, depth + 1)
+      } else {
+        val dir = if(into) 1 else -1
+        val tdir = (r.d*nnt - n*(dir*(ddn*nnt+Math.sqrt(cos2t)))).norm()
+        val a = nt-nc
+        val b = nt+nc
+        val R0 = a*a/(b*b)
+        val c = if(into) 1+ddn else 1-tdir.dot(n)
+        val Re = R0 + (1-R0)*c*c*c*c*c
+        val Tr = 1-Re
+        val P = .25 + .5*Re
+        val RP = Re/P
+        val TP = Tr/(1-P)
+        if (depth + 1 > 2) {
+          if (rand.nextDouble() < P) { // Russian roulette
+            hitObj.e + f * radiance(reflRay, depth + 1) * RP
+          } else {
+            hitObj.e + f * radiance(Ray(x, tdir), depth + 1) * TP
+          }
+        } else {
+          hitObj.e + f * radiance(reflRay, depth + 1) * Re + radiance(Ray(x, tdir), depth + 1) * Tr
+        }
+      }
     }
     rad
   }
@@ -180,7 +168,7 @@ object Smallpt {
     val canvas = for { y <- 0 until height; x <- 0 until width } yield (x, y)
     canvas.par.foreach{
       case (x, y) =>
-        print(s"\rRendering ${4*samples}subpixels at ($x, $y)")
+        print(s"\rRendering ${4*samples} subpixels at ($x, $y)")
         val i = (height-y-1)*width+x
         c(i) = sub.par.foldLeft(Vec())((pixelSum, sub) => {
           val radSampleSum = (0 until samples).par.foldLeft(Vec())((radSum, _) => {
