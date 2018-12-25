@@ -48,19 +48,19 @@ object ReflType extends Enumeration {
   * @param c    color
   * @param refl reflection type
   */
-case class Sphere(rad: Double, p: Vec, e: Vec, c: Vec, refl: ReflType.Value){
-  val epsilon=1e-4
+case class Sphere(rad: Double, p: Vec, e: Vec, c: Vec, refl: ReflType.Value) {
+  val epsilon = 1e-4
   // return distance, 0 if no hit
   def intersect(r: Ray): Double = {
-    val op = p-r.o
+    val op = p - r.o
     val b = op.dot(r.d)
-    var det = b*b - op.dot(op) + rad*rad
-    if (det < 0) { 0.0 }
-    else {
-      det = Math.sqrt(det)
-      if (b-det > epsilon) b-det
-      else if (b + det > epsilon) b+det
-      else 0
+    val det = b * b - op.dot(op) + rad * rad
+    det match {
+      case _ if det < 0 => 0.0
+      case _ => val ddet = Math.sqrt(det)
+        if (b - ddet > epsilon) b - ddet
+        else if (b + ddet > epsilon) b + ddet
+        else 0
     }
   }
 }
@@ -100,7 +100,7 @@ object Smallpt {
     val x = r.o + r.d*hitDist
     val n = (x-hitObj.p).norm()
     val nl = if(n.dot(r.d) < 0) n else n*(-1)
-    var f = obj.c
+    var f = hitObj.c
     val p = if (f.x > f.y && f.x > f.z) f.x else if (f.y > f.z) f.y else f.z
 
     def comp_radiance(obj: Sphere, f: Vec): Vec = {
