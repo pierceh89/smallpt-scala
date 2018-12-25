@@ -2,12 +2,9 @@
 
 This is scala port of [smallpt](http://www.kevinbeason.com/smallpt/)
 
-It works, but optimization is ongoing.
-
-I simply translated C++ code to scala.
-
-After parallel stream was applied, StackOverflow exception occurs at high sample size.
-
-This perhaps could be fixed by making radiance function as tail recursion.
-
-
+## How to run
+```bash
+scalac smallpt/src/main/scala/io/github/pierceh89/smallpt/Smallpt.scala
+scala io.github.pierceh89.smallpt.Smallpt    #  4 subpixels, default
+scala io.github.pierceh89.smallpt.Smallpt 32 # 32 subpixels
+```
