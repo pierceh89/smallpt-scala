@@ -49,23 +49,18 @@ object ReflType extends Enumeration {
   * @param refl reflection type
   */
 case class Sphere(rad: Double, p: Vec, e: Vec, c: Vec, refl: ReflType.Value){
+  val epsilon=1e-4
   // return distance, 0 if no hit
   def intersect(r: Ray): Double = {
     val op = p-r.o
-    val epsilon=1e-4
     val b = op.dot(r.d)
     var det = b*b - op.dot(op) + rad*rad
     if (det < 0) { 0.0 }
     else {
       det = Math.sqrt(det)
-      if (b-det > epsilon) {
-        b-det
-      }
-      else if (b + det > epsilon) {
-        b+det
-      } else {
-        0
-      }
+      if (b-det > epsilon) b-det
+      else if (b + det > epsilon) b+det
+      else 0
     }
   }
 }
@@ -100,9 +95,9 @@ object Smallpt {
     }
     (newT < infinity, newT, newId)
   }
-  def radiance(r: Ray, depth: Int): Vec = {
+  def radiance2(r: Ray, depth: Int): Vec = {
     val (isIntersect, t, id) = intersect(r, 0.0, 0)
-    if (!isIntersect) Vec()
+    if (!isIntersect) return Vec()
     val obj = spheres(id)
     val x = r.o + r.d*t
     val n = (x-obj.p).norm()
@@ -110,67 +105,53 @@ object Smallpt {
     var f = obj.c
     val p = if (f.x > f.y && f.x > f.z) f.x else if (f.y > f.z) f.y else f.z
     val newDepth = depth + 1
-
-    def comp_radiance(obj: Sphere, f: Vec): Vec = {
-      obj.refl match {
-        case DIFF => // Ideal DIFFUSE reflection
-          val r1 = 2 * Math.PI * rand.nextDouble()
-          val r2 = rand.nextDouble()
-          val r2s = Math.sqrt(r2)
-          val w = nl
-          var u = (if (Math.abs(w.x) > .1) Vec(0, 1) else Vec(1)).norm()
-          val v = w.cross(u)
-          val d = (u*Math.cos(r1)*r2s + v*Math.sin(r1)*r2s + w*Math.sqrt(1-r2)).norm()
-          obj.e + f * radiance(Ray(x,d), newDepth)
-        case SPEC => // Ideal SPECULAR reflection
-          obj.e + f * radiance(Ray(x, r.d-n*2*n.dot(r.d)), newDepth)
-        case REFR => // Ideal dielectric REFRACTION
-          val reflRay = Ray(x, r.d-n*2*n.dot(r.d))
-          val into = n.dot(nl) > 0
-          val nc = 1.0
-          val nt = 1.5
-          val nnt = if(into) nc/nt else nt/nc
-          val ddn = r.d.dot(nl)
-          val cos2t = 1 - nnt * nnt * (1-ddn*ddn)
-          if (cos2t < 0) {
-            obj.e + f * radiance(reflRay, newDepth)
-          } else {
-            val dir = if(into) 1 else -1
-            val tdir = (r.d*nnt - n*(dir*(ddn*nnt+Math.sqrt(cos2t)))).norm()
-            val a = nt-nc
-            val b = nt+nc
-            val R0 = a*a/(b*b)
-            val c = if(into) 1+ddn else 1-tdir.dot(n)
-            val Re = R0 + (1-R0)*c*c*c*c*c
-            val Tr = 1-Re
-            val P = .25 + .5*Re
-            val RP = Re/P
-            val TP = Tr/(1-P)
-            if (newDepth > 2) {
-              if (rand.nextDouble() < P) { // Russian roulette
-                obj.e + f * radiance(reflRay, newDepth) * RP
-              } else {
-                obj.e + f * radiance(Ray(x, tdir), newDepth) * TP
-              }
-            } else {
-              obj.e + f * radiance(reflRay, newDepth) * Re + radiance(Ray(x, tdir), newDepth) * Tr
-            }
-          }
-      }
+    val roulette = rand.nextDouble()
+    if (newDepth > 5 && roulette >= p) return obj.e
+    f = f * (1.0 / p)
+    // ideal diffuse reflection
+    if (obj.refl == DIFF) {
+      val r1 = 2 * Math.PI * rand.nextDouble()
+      val r2 = rand.nextDouble()
+      val r2s = Math.sqrt(r2)
+      val w = nl
+      val u = (if (Math.abs(w.x) > .1) Vec(0, 1) else Vec(1)).norm()
+      val v = w.cross(u)
+      val d = (u*Math.cos(r1)*r2s + v*Math.sin(r1)*r2s + w*Math.sqrt(1-r2)).norm()
+      return obj.e + f * radiance2(Ray(x,d), newDepth)
+    } else if (obj.refl == SPEC) {
+      return obj.e + f * radiance2(Ray(x, r.d-n*2*n.dot(r.d)), newDepth)
     }
-
-    val rad = if (newDepth > 5) {
-      if (rand.nextDouble() < p) {
-        f = f * (1.0 / p)
-        comp_radiance(obj, f)
-      }
-      else {
-        obj.e
-      }
+    val reflRay = Ray(x, r.d-n*2*n.dot(r.d))
+    val into = n.dot(nl) > 0
+    val nc = 1.0
+    val nt = 1.5
+    val nnt = if(into) nc/nt else nt/nc
+    val ddn = r.d.dot(nl)
+    val cos2t = 1 - nnt * nnt * (1-ddn*ddn)
+    if (cos2t < 0) {
+      obj.e + f * radiance2(reflRay, newDepth)
     } else {
-      comp_radiance(obj, f)
+      val dir = if(into) 1 else -1
+      val tdir = (r.d*nnt - n*(dir*(ddn*nnt+Math.sqrt(cos2t)))).norm()
+      val a = nt-nc
+      val b = nt+nc
+      val R0 = a*a/(b*b)
+      val c = if(into) 1+ddn else 1-tdir.dot(n)
+      val Re = R0 + (1-R0)*c*c*c*c*c
+      val Tr = 1-Re
+      val P = .25 + .5*Re
+      val RP = Re/P
+      val TP = Tr/(1-P)
+      if (newDepth > 2) {
+        if (rand.nextDouble() < P) { // Russian roulette
+          obj.e + f * radiance2(reflRay, newDepth) * RP
+        } else {
+          obj.e + f * radiance2(Ray(x, tdir), newDepth) * TP
+        }
+      } else {
+        obj.e + f * radiance2(reflRay, newDepth) * Re + radiance2(Ray(x, tdir), newDepth) * Tr
+      }
     }
-    rad
   }
 
   def main(args: Array[String]): Unit = {
@@ -198,7 +179,7 @@ object Smallpt {
             val dy = if (r2 < 1) Math.sqrt(r2)-1 else 1-Math.sqrt(2-r2)
             val d = cx * (((sub._1+.5 + dx)/2 + x)/width - .5) +
               cy * (((sub._2+.5 + dy)/2 + y)/height - .5) + cam.d
-            val rad = radiance(Ray(cam.o + d*140, d.norm()), 0) * (1.0/samples)
+            val rad = radiance2(Ray(cam.o + d*140, d.norm()), 0) * (1.0/samples)
             radSum + rad
           })
           pixelSum + Vec(clamp(radSampleSum.x), clamp(radSampleSum.y), clamp(radSampleSum.z)) * .25
