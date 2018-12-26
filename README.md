@@ -1,4 +1,4 @@
-# Smallpt-scala
+# Smallpt-scala [![Build Status](https://travis-ci.org/pierceh89/smallpt-scala.svg?branch=master)](https://travis-ci.org/pierceh89/smallpt-scala)
 
 This is scala port of [smallpt](http://www.kevinbeason.com/smallpt/)
 
